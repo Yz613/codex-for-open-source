@@ -125,7 +125,13 @@ async fn build_uploaded_local_argument_value(
         .map_err(|error| format!("failed to read ChatGPT auth for file upload: {error}"))?;
     let upload_auth = CoreAuthProvider {
         token: Some(token_data.access_token),
-        account_id: token_data.account_id,
+        account_id: token_data
+            .id_token
+            .chatgpt_account_id
+            .clone()
+            .or(token_data.account_id),
+        originator: None,
+        user_agent: None,
     };
     let default_upload_options = OpenAiFileUploadOptions::default();
     let uploaded = upload_local_file(

@@ -7,12 +7,13 @@ use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_mcp::LIBRARY_DOWNLOAD_FILE_TOOL_NAME;
 use codex_protocol::mcp::CallToolResult;
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tracing::warn;
 
 const LIBRARY_DOWNLOAD_ARTIFACTS_DIR: &str = ".tmp/library_downloads";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct LibraryDownloadStructuredContent {
     file_id: String,
     #[serde(default)]
@@ -20,7 +21,7 @@ struct LibraryDownloadStructuredContent {
     file_uri: LibraryDownloadFileUri,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct LibraryDownloadFileUri {
     download_url: String,
     #[serde(default)]
@@ -35,10 +36,13 @@ pub(crate) async fn maybe_materialize_codex_apps_library_download_result(
     result: CallToolResult,
 ) -> CallToolResult {
     let auth = sess.services.auth_manager.auth().await;
+    let client_metadata = sess.app_server_client_metadata().await;
     maybe_materialize_codex_apps_library_download_result_with_auth(
         turn_context,
         &sess.conversation_id.to_string(),
         auth.as_ref(),
+        client_metadata.client_name.as_deref(),
+        client_metadata.client_version.as_deref(),
         server,
         tool_name,
         result,
@@ -50,6 +54,8 @@ async fn maybe_materialize_codex_apps_library_download_result_with_auth(
     turn_context: &TurnContext,
     session_id: &str,
     auth: Option<&CodexAuth>,
+    client_name: Option<&str>,
+    client_version: Option<&str>,
     server: &str,
     tool_name: &str,
     mut result: CallToolResult,
@@ -61,14 +67,14 @@ async fn maybe_materialize_codex_apps_library_download_result_with_auth(
         return result;
     }
 
-    let Some(structured_content) = result.structured_content.clone() else {
+    let Some(payload) = extract_library_download_payload(&result) else {
         return result;
     };
-    let Ok(payload) =
-        serde_json::from_value::<LibraryDownloadStructuredContent>(structured_content)
-    else {
-        return result;
-    };
+    if result.structured_content.is_none()
+        && let Ok(structured_content) = serde_json::to_value(&payload)
+    {
+        result.structured_content = Some(structured_content);
+    }
 
     let Some(auth) = auth else {
         warn!("skipping Library download materialization because ChatGPT auth is unavailable");
@@ -83,7 +89,13 @@ async fn maybe_materialize_codex_apps_library_download_result_with_auth(
     };
     let download_auth = CoreAuthProvider {
         token: Some(token_data.access_token),
-        account_id: token_data.account_id,
+        account_id: token_data
+            .id_token
+            .chatgpt_account_id
+            .clone()
+            .or(token_data.account_id),
+        originator: client_name.map(str::to_string),
+        user_agent: build_desktop_style_user_agent(client_name, client_version),
     };
     let downloaded = match download_openai_file(
         turn_context.config.chatgpt_base_url.trim_end_matches('/'),
@@ -144,6 +156,40 @@ async fn maybe_materialize_codex_apps_library_download_result_with_auth(
         "text": format!("Downloaded library file to local path: {local_path}"),
     }));
     result
+}
+
+fn build_desktop_style_user_agent(
+    client_name: Option<&str>,
+    client_version: Option<&str>,
+) -> Option<String> {
+    let (Some(client_name), Some(client_version)) = (client_name, client_version) else {
+        return None;
+    };
+    Some(format!(
+        "{client_name}/{client_version} ({}; {})",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ))
+}
+
+fn extract_library_download_payload(
+    result: &CallToolResult,
+) -> Option<LibraryDownloadStructuredContent> {
+    if let Some(structured_content) = result.structured_content.clone()
+        && let Ok(payload) =
+            serde_json::from_value::<LibraryDownloadStructuredContent>(structured_content)
+    {
+        return Some(payload);
+    }
+
+    result
+        .content
+        .iter()
+        .filter_map(|item| item.as_object())
+        .find_map(|item| {
+            let text = item.get("text")?.as_str()?;
+            serde_json::from_str::<LibraryDownloadStructuredContent>(text).ok()
+        })
 }
 
 fn library_download_artifact_path(
@@ -223,6 +269,8 @@ mod tests {
             &turn_context,
             "session-1",
             Some(&CodexAuth::create_dummy_chatgpt_auth_for_testing()),
+            Some("Codex Desktop"),
+            Some("0.0.0"),
             CODEX_APPS_MCP_SERVER_NAME,
             "calendar/list_events",
             original.clone(),
@@ -239,6 +287,8 @@ mod tests {
             .and(path("/files/download/file_123"))
             .and(header("authorization", "Bearer Access Token"))
             .and(header("chatgpt-account-id", "account_id"))
+            .and(header("originator", "Codex Desktop"))
+            .and(header("user-agent", "Codex Desktop/0.0.0 (macos; aarch64)"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header("content-type", "text/plain")
@@ -275,6 +325,8 @@ mod tests {
             &turn_context,
             "session-1",
             Some(&CodexAuth::create_dummy_chatgpt_auth_for_testing()),
+            Some("Codex Desktop"),
+            Some("0.0.0"),
             CODEX_APPS_MCP_SERVER_NAME,
             LIBRARY_DOWNLOAD_FILE_TOOL_NAME,
             original,
@@ -321,6 +373,8 @@ mod tests {
             &turn_context,
             "session-1",
             None,
+            Some("Codex Desktop"),
+            Some("0.0.0"),
             CODEX_APPS_MCP_SERVER_NAME,
             LIBRARY_DOWNLOAD_FILE_TOOL_NAME,
             original.clone(),
@@ -328,5 +382,83 @@ mod tests {
         .await;
 
         assert_eq!(result, original);
+    }
+
+    #[tokio::test]
+    async fn library_download_materialization_uses_json_text_when_structured_content_is_missing() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/files/download/file_123"))
+            .and(header("authorization", "Bearer Access Token"))
+            .and(header("chatgpt-account-id", "account_id"))
+            .and(header("originator", "Codex Desktop"))
+            .and(header("user-agent", "Codex Desktop/0.0.0 (macos; aarch64)"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/plain")
+                    .set_body_bytes(b"library contents".to_vec()),
+            )
+            .mount(&server)
+            .await;
+
+        let (_, mut turn_context) = make_session_and_context().await;
+        let mut config = (*turn_context.config).clone();
+        config.chatgpt_base_url = format!("{}/backend-api/codex", server.uri());
+        turn_context.config = Arc::new(config);
+        let original = CallToolResult {
+            content: vec![serde_json::json!({
+                "type": "text",
+                "text": serde_json::json!({
+                    "file_id": "file_123",
+                    "file_name": "testing-library.txt",
+                    "file_uri": {
+                        "download_url": "/files/download/file_123",
+                        "file_name": "testing-library.txt",
+                    }
+                })
+                .to_string(),
+            })],
+            structured_content: None,
+            is_error: Some(false),
+            meta: None,
+        };
+
+        let result = maybe_materialize_codex_apps_library_download_result_with_auth(
+            &turn_context,
+            "session-1",
+            Some(&CodexAuth::create_dummy_chatgpt_auth_for_testing()),
+            Some("Codex Desktop"),
+            Some("0.0.0"),
+            CODEX_APPS_MCP_SERVER_NAME,
+            LIBRARY_DOWNLOAD_FILE_TOOL_NAME,
+            original,
+        )
+        .await;
+
+        let local_path = result
+            .content
+            .iter()
+            .find_map(|item| {
+                item.get("text")
+                    .and_then(|text| text.as_str())
+                    .and_then(|text| text.strip_prefix("Downloaded library file to local path: "))
+            })
+            .expect("expected local path announcement");
+        assert_eq!(
+            result.structured_content,
+            Some(serde_json::json!({
+                "file_id": "file_123",
+                "file_name": "testing-library.txt",
+                "file_uri": {
+                    "download_url": "/files/download/file_123",
+                    "file_name": "testing-library.txt",
+                },
+                "local_path": local_path,
+            }))
+        );
+        assert_eq!(
+            tokio::fs::read(local_path).await.expect("downloaded file"),
+            b"library contents"
+        );
     }
 }

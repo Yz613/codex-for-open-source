@@ -435,7 +435,12 @@ mod tests {
     use wiremock::matchers::path;
 
     fn chatgpt_auth() -> CoreAuthProvider {
-        CoreAuthProvider::for_test(Some("token"), Some("account_id"))
+        CoreAuthProvider {
+            token: Some("token".to_string()),
+            account_id: Some("account_id".to_string()),
+            originator: Some("Codex_Desktop".to_string()),
+            user_agent: Some("Codex Desktop/Test".to_string()),
+        }
     }
 
     fn base_url_for(server: &MockServer) -> String {
@@ -449,6 +454,8 @@ mod tests {
             .and(path("/files/download/file_123"))
             .and(header("authorization", "Bearer token"))
             .and(header("chatgpt-account-id", "account_id"))
+            .and(header("originator", "Codex_Desktop"))
+            .and(header("user-agent", "Codex Desktop/Test"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header("content-type", "text/plain")
