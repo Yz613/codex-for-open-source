@@ -213,13 +213,12 @@ impl ToolHandler for ShellHandler {
 
     fn post_tool_use_payload(
         &self,
-        call_id: &str,
-        _tool_name: &codex_tools::ToolName,
-        payload: &ToolPayload,
+        invocation: &ToolInvocation,
         result: &dyn ToolOutput,
     ) -> Option<PostToolUsePayload> {
-        let tool_response = result.post_tool_use_response(call_id, payload)?;
-        let command = shell_payload_command(payload)?;
+        let tool_response =
+            result.post_tool_use_response(&invocation.call_id, &invocation.payload)?;
+        let command = shell_payload_command(&invocation.payload)?;
         Some(PostToolUsePayload {
             tool_name: "Bash".to_string(),
             tool_input: serde_json::json!({ "command": command }),
@@ -327,13 +326,12 @@ impl ToolHandler for ShellCommandHandler {
 
     fn post_tool_use_payload(
         &self,
-        call_id: &str,
-        _tool_name: &codex_tools::ToolName,
-        payload: &ToolPayload,
+        invocation: &ToolInvocation,
         result: &dyn ToolOutput,
     ) -> Option<PostToolUsePayload> {
-        let tool_response = result.post_tool_use_response(call_id, payload)?;
-        let command = shell_command_payload_command(payload)?;
+        let tool_response =
+            result.post_tool_use_response(&invocation.call_id, &invocation.payload)?;
+        let command = shell_command_payload_command(&invocation.payload)?;
         Some(PostToolUsePayload {
             tool_name: "Bash".to_string(),
             tool_input: serde_json::json!({ "command": command }),

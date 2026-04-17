@@ -69,9 +69,7 @@ pub trait ToolHandler: Send + Sync {
 
     fn post_tool_use_payload(
         &self,
-        _call_id: &str,
-        _tool_name: &ToolName,
-        _payload: &ToolPayload,
+        _invocation: &ToolInvocation,
         _result: &dyn ToolOutput,
     ) -> Option<PostToolUsePayload> {
         None
@@ -145,9 +143,7 @@ trait AnyToolHandler: Send + Sync {
 
     fn post_tool_use_payload(
         &self,
-        call_id: &str,
-        tool_name: &ToolName,
-        payload: &ToolPayload,
+        invocation: &ToolInvocation,
         result: &dyn ToolOutput,
     ) -> Option<PostToolUsePayload>;
 
@@ -177,12 +173,10 @@ where
 
     fn post_tool_use_payload(
         &self,
-        call_id: &str,
-        tool_name: &ToolName,
-        payload: &ToolPayload,
+        invocation: &ToolInvocation,
         result: &dyn ToolOutput,
     ) -> Option<PostToolUsePayload> {
-        ToolHandler::post_tool_use_payload(self, call_id, tool_name, payload, result)
+        ToolHandler::post_tool_use_payload(self, invocation, result)
     }
 
     fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
@@ -393,12 +387,7 @@ impl ToolRegistry {
         let post_tool_use_payload = if success {
             let guard = response_cell.lock().await;
             guard.as_ref().and_then(|result| {
-                handler.post_tool_use_payload(
-                    &result.call_id,
-                    &tool_name,
-                    &result.payload,
-                    result.result.as_ref(),
-                )
+                handler.post_tool_use_payload(&invocation, result.result.as_ref())
             })
         } else {
             None
