@@ -387,13 +387,7 @@ impl NetworkApprovalService {
             &session,
             &turn_context,
             &guardian_approval_id,
-            PermissionRequestPayload {
-                tool_name: "Bash".to_string(),
-                tool_input: serde_json::json!({
-                    "command": command,
-                    "description": format!("network-access {target}"),
-                }),
-            },
+            PermissionRequestPayload::bash(command, Some(format!("network-access {target}"))),
         )
         .await
         {

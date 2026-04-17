@@ -3,6 +3,35 @@ use crate::sandboxing::SandboxPermissions;
 use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::NetworkAccess;
 use pretty_assertions::assert_eq;
+use serde_json::json;
+
+#[test]
+fn bash_permission_request_payload_omits_missing_description() {
+    assert_eq!(
+        PermissionRequestPayload::bash("echo hi".to_string(), None),
+        PermissionRequestPayload {
+            tool_name: "Bash".to_string(),
+            tool_input: json!({ "command": "echo hi" }),
+        }
+    );
+}
+
+#[test]
+fn bash_permission_request_payload_includes_description_when_present() {
+    assert_eq!(
+        PermissionRequestPayload::bash(
+            "echo hi".to_string(),
+            Some("network-access example.com".to_string()),
+        ),
+        PermissionRequestPayload {
+            tool_name: "Bash".to_string(),
+            tool_input: json!({
+                "command": "echo hi",
+                "description": "network-access example.com",
+            }),
+        }
+    );
+}
 
 #[test]
 fn external_sandbox_skips_exec_approval_on_request() {
