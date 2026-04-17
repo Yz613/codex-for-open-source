@@ -127,7 +127,6 @@ impl AnyToolResult {
 pub(crate) struct PreToolUsePayload {
     pub(crate) tool_name: String,
     pub(crate) tool_input: Value,
-    pub(crate) display_command: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -332,7 +331,13 @@ impl ToolRegistry {
             )
             .await
         {
-            let message = if let Some(command) = pre_tool_use_payload.display_command {
+            // Bash hook payloads expose the executable text as tool_input.command.
+            let message = if pre_tool_use_payload.tool_name == "Bash"
+                && let Some(command) = pre_tool_use_payload
+                    .tool_input
+                    .get("command")
+                    .and_then(Value::as_str)
+            {
                 format!("Command blocked by PreToolUse hook: {reason}. Command: {command}")
             } else {
                 format!(
