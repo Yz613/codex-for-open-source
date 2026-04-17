@@ -602,14 +602,17 @@ impl FileSystemSandboxPolicy {
                 .iter()
                 .filter(|path| normalize_effective_absolute_path((*path).clone()) == root)
                 .collect();
-            let protect_missing_dot_codex = AbsolutePathBuf::from_absolute_path(cwd)
+            let protect_missing_project_metadata = AbsolutePathBuf::from_absolute_path(cwd)
                 .ok()
                 .is_some_and(|cwd| normalize_effective_absolute_path(cwd) == root);
             let mut read_only_subpaths: Vec<AbsolutePathBuf> =
-                default_read_only_subpaths_for_writable_root(&root, protect_missing_dot_codex)
-                    .into_iter()
-                    .filter(|path| !has_explicit_resolved_path_entry(&resolved_entries, path))
-                    .collect();
+                default_read_only_subpaths_for_writable_root(
+                    &root,
+                    protect_missing_project_metadata,
+                )
+                .into_iter()
+                .filter(|path| !has_explicit_resolved_path_entry(&resolved_entries, path))
+                .collect();
             // Narrower explicit non-write entries carve out broader writable roots.
             // More specific write entries still remain writable because they appear
             // as separate WritableRoot values and are checked independently.
@@ -1296,7 +1299,7 @@ fn normalize_effective_absolute_path(path: AbsolutePathBuf) -> AbsolutePathBuf {
 
 fn default_read_only_subpaths_for_writable_root(
     writable_root: &AbsolutePathBuf,
-    protect_missing_dot_codex: bool,
+    protect_missing_project_metadata: bool,
 ) -> Vec<AbsolutePathBuf> {
     let mut subpaths: Vec<AbsolutePathBuf> = Vec::new();
     let top_level_git = writable_root.join(".git");
@@ -1305,7 +1308,7 @@ fn default_read_only_subpaths_for_writable_root(
     // writable root itself.
     let top_level_git_is_file = top_level_git.as_path().is_file();
     let top_level_git_is_dir = top_level_git.as_path().is_dir();
-    if top_level_git_is_dir || top_level_git_is_file {
+    if top_level_git_is_dir || top_level_git_is_file || protect_missing_project_metadata {
         if top_level_git_is_file
             && is_git_pointer_file(&top_level_git)
             && let Some(gitdir) = resolve_gitdir_from_file(&top_level_git)
@@ -1325,7 +1328,7 @@ fn default_read_only_subpaths_for_writable_root(
     // directory exists so first-time creation still goes through the
     // protected-path approval flow.
     let top_level_codex = writable_root.join(".codex");
-    if protect_missing_dot_codex || top_level_codex.as_path().is_dir() {
+    if protect_missing_project_metadata || top_level_codex.as_path().is_dir() {
         subpaths.push(top_level_codex);
     }
 
@@ -1481,12 +1484,13 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn writable_roots_proactively_protect_missing_dot_codex() {
+    fn writable_roots_proactively_protect_missing_project_metadata() {
         let cwd = TempDir::new().expect("tempdir");
         let expected_root = AbsolutePathBuf::from_absolute_path(
             cwd.path().canonicalize().expect("canonicalize cwd"),
         )
         .expect("absolute canonical root");
+        let expected_dot_git = expected_root.join(".git");
         let expected_dot_codex = expected_root.join(".codex");
 
         let policy = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
@@ -1502,24 +1506,36 @@ mod tests {
         assert!(
             writable_roots[0]
                 .read_only_subpaths
+                .contains(&expected_dot_git)
+        );
+        assert!(
+            writable_roots[0]
+                .read_only_subpaths
                 .contains(&expected_dot_codex)
         );
     }
 
     #[cfg(unix)]
     #[test]
-    fn writable_roots_skip_default_dot_codex_when_explicit_user_rule_exists() {
+    fn writable_roots_skip_default_metadata_when_explicit_user_rule_exists() {
         let cwd = TempDir::new().expect("tempdir");
         let expected_root = AbsolutePathBuf::from_absolute_path(
             cwd.path().canonicalize().expect("canonicalize cwd"),
         )
         .expect("absolute canonical root");
+        let explicit_dot_git = expected_root.join(".git");
         let explicit_dot_codex = expected_root.join(".codex");
 
         let policy = FileSystemSandboxPolicy::restricted(vec![
             FileSystemSandboxEntry {
                 path: FileSystemPath::Special {
                     value: FileSystemSpecialPath::CurrentWorkingDirectory,
+                },
+                access: FileSystemAccessMode::Write,
+            },
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: explicit_dot_git.clone(),
                 },
                 access: FileSystemAccessMode::Write,
             },
@@ -1539,6 +1555,12 @@ mod tests {
         assert!(
             !workspace_root
                 .read_only_subpaths
+                .contains(&explicit_dot_git),
+            "explicit .git rule should win over the default protected carveout"
+        );
+        assert!(
+            !workspace_root
+                .read_only_subpaths
                 .contains(&explicit_dot_codex),
             "explicit .codex rule should win over the default protected carveout"
         );
@@ -1551,8 +1573,9 @@ mod tests {
     }
 
     #[test]
-    fn legacy_workspace_write_projection_blocks_missing_dot_codex_writes() {
+    fn legacy_workspace_write_projection_blocks_missing_metadata_writes() {
         let cwd = TempDir::new().expect("tempdir");
+        let dot_git_config = cwd.path().join(".git").join("config");
         let dot_codex_config = cwd.path().join(".codex").join("config.toml");
         let policy = SandboxPolicy::WorkspaceWrite {
             writable_roots: vec![],
@@ -1568,6 +1591,7 @@ mod tests {
         let file_system_policy =
             FileSystemSandboxPolicy::from_legacy_sandbox_policy(&policy, cwd.path());
 
+        assert!(!file_system_policy.can_write_path_with_cwd(&dot_git_config, cwd.path()));
         assert!(!file_system_policy.can_write_path_with_cwd(&dot_codex_config, cwd.path()));
     }
 

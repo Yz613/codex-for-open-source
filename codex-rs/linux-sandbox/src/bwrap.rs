@@ -416,7 +416,12 @@ fn create_filesystem_args(
         }
         read_only_subpaths.sort_by_key(|path| path_depth(path));
         for subpath in read_only_subpaths {
-            append_read_only_subpath_args(&mut args, &subpath, &allowed_write_paths)?;
+            append_read_only_subpath_args(
+                &mut args,
+                &mut preserved_files,
+                &subpath,
+                &allowed_write_paths,
+            )?;
         }
         let mut nested_unreadable_roots: Vec<PathBuf> = unreadable_roots
             .iter()
@@ -787,6 +792,7 @@ fn append_mount_target_parent_dir_args(args: &mut Vec<String>, mount_target: &Pa
 
 fn append_read_only_subpath_args(
     args: &mut Vec<String>,
+    preserved_files: &mut Vec<File>,
     subpath: &Path,
     allowed_write_paths: &[PathBuf],
 ) -> Result<()> {
@@ -808,9 +814,7 @@ fn append_read_only_subpath_args(
         if let Some(first_missing_component) = find_first_non_existent_component(subpath)
             && is_within_allowed_write_paths(&first_missing_component, allowed_write_paths)
         {
-            args.push("--ro-bind".to_string());
-            args.push("/dev/null".to_string());
-            args.push(path_to_string(&first_missing_component));
+            append_empty_file_bind_data_args(args, preserved_files, &first_missing_component)?;
         }
         return Ok(());
     }
@@ -820,6 +824,21 @@ fn append_read_only_subpath_args(
         args.push(path_to_string(subpath));
         args.push(path_to_string(subpath));
     }
+    Ok(())
+}
+
+fn append_empty_file_bind_data_args(
+    args: &mut Vec<String>,
+    preserved_files: &mut Vec<File>,
+    path: &Path,
+) -> Result<()> {
+    if preserved_files.is_empty() {
+        preserved_files.push(File::open("/dev/null")?);
+    }
+    let null_fd = preserved_files[0].as_raw_fd().to_string();
+    args.push("--ro-bind-data".to_string());
+    args.push(null_fd);
+    args.push(path_to_string(path));
     Ok(())
 }
 
@@ -850,9 +869,7 @@ fn append_unreadable_root_args(
         if let Some(first_missing_component) = find_first_non_existent_component(unreadable_root)
             && is_within_allowed_write_paths(&first_missing_component, allowed_write_paths)
         {
-            args.push("--ro-bind".to_string());
-            args.push("/dev/null".to_string());
-            args.push(path_to_string(&first_missing_component));
+            append_empty_file_bind_data_args(args, preserved_files, &first_missing_component)?;
         }
         return Ok(());
     }
@@ -901,16 +918,9 @@ fn append_existing_unreadable_path_args(
         return Ok(());
     }
 
-    if preserved_files.is_empty() {
-        preserved_files.push(File::open("/dev/null")?);
-    }
-    let null_fd = preserved_files[0].as_raw_fd().to_string();
     args.push("--perms".to_string());
     args.push("000".to_string());
-    args.push("--ro-bind-data".to_string());
-    args.push(null_fd);
-    args.push(path_to_string(unreadable_root));
-    Ok(())
+    append_empty_file_bind_data_args(args, preserved_files, unreadable_root)
 }
 
 /// Returns true when `path` is under any allowed writable root.
@@ -1360,6 +1370,41 @@ mod tests {
     }
 
     #[test]
+    fn missing_read_only_subpath_uses_empty_file_bind_data() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        let blocked = workspace.join("blocked");
+        std::fs::create_dir_all(&workspace).expect("create workspace");
+
+        let workspace_root =
+            AbsolutePathBuf::from_absolute_path(&workspace).expect("absolute workspace");
+        let blocked_root = AbsolutePathBuf::from_absolute_path(&blocked).expect("absolute blocked");
+        let policy = FileSystemSandboxPolicy::restricted(vec![
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: workspace_root,
+                },
+                access: FileSystemAccessMode::Write,
+            },
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path { path: blocked_root },
+                access: FileSystemAccessMode::Read,
+            },
+        ]);
+
+        let args =
+            create_filesystem_args(&policy, temp_dir.path(), NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH)
+                .expect("filesystem args");
+
+        assert_empty_file_bound_without_perms(&args.args, &blocked);
+        assert_eq!(args.preserved_files.len(), 1);
+        assert!(
+            !blocked.exists(),
+            "missing path mask should not materialize host-side protected paths at arg construction time",
+        );
+    }
+
+    #[test]
     fn ignores_missing_writable_roots() {
         let temp_dir = TempDir::new().expect("temp dir");
         let existing_root = temp_dir.path().join("existing");
@@ -1414,6 +1459,8 @@ mod tests {
             NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH,
         )
         .expect("bwrap fs args");
+        assert_eq!(args.preserved_files.len(), 1);
+        let null_fd = args.preserved_files[0].as_raw_fd().to_string();
         assert_eq!(
             args.args,
             vec![
@@ -1430,9 +1477,12 @@ mod tests {
                 "/".to_string(),
                 // Mask the default protected .codex subpath under that writable
                 // root. Because the root is `/` in this test, the carveout path
-                // appears as `/.codex`.
-                "--ro-bind".to_string(),
-                "/dev/null".to_string(),
+                // appears as `/.codex` and `/.git`.
+                "--ro-bind-data".to_string(),
+                null_fd.clone(),
+                "/.git".to_string(),
+                "--ro-bind-data".to_string(),
+                null_fd,
                 "/.codex".to_string(),
                 // Rebind /dev after the root bind so device nodes remain
                 // writable/usable inside the writable root.
@@ -2016,6 +2066,26 @@ mod tests {
                     && window[4] == path
             }),
             "expected file mask for {path}: {args:#?}"
+        );
+    }
+
+    /// Assert that `path` is backed by an fd-supplied empty file without
+    /// changing the next mount operation's permissions.
+    fn assert_empty_file_bound_without_perms(args: &[String], path: &Path) {
+        let path = path_to_string(path);
+        assert!(
+            args.windows(3)
+                .any(|window| { window[0] == "--ro-bind-data" && window[2] == path }),
+            "expected empty file bind for {path}: {args:#?}"
+        );
+        assert!(
+            !args.windows(5).any(|window| {
+                window[0] == "--perms"
+                    && window[1] == "000"
+                    && window[2] == "--ro-bind-data"
+                    && window[4] == path
+            }),
+            "missing path bind should not set explicit file perms for {path}: {args:#?}"
         );
     }
 }
