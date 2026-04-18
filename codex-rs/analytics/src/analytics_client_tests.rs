@@ -49,6 +49,8 @@ use crate::facts::TurnTokenUsageFact;
 use crate::reducer::AnalyticsReducer;
 use crate::reducer::normalize_path_for_skill_id;
 use crate::reducer::skill_id_for_local_skill;
+use crate::responses_api::CodexResponsesApiCallFact;
+use crate::responses_api::CodexResponsesApiCallStatus;
 use codex_app_server_protocol::ApprovalsReviewer as AppServerApprovalsReviewer;
 use codex_app_server_protocol::AskForApproval as AppServerAskForApproval;
 use codex_app_server_protocol::ClientInfo;
@@ -1048,6 +1050,71 @@ async fn compaction_event_ingests_custom_fact() {
     assert_eq!(payload[0]["event_params"]["phase"], "standalone_turn");
     assert_eq!(payload[0]["event_params"]["strategy"], "memento");
     assert_eq!(payload[0]["event_params"]["status"], "failed");
+}
+
+#[tokio::test]
+async fn responses_api_call_event_ingests_custom_fact() {
+    let mut reducer = AnalyticsReducer::default();
+    let mut events = Vec::new();
+    ingest_turn_prerequisites(
+        &mut reducer,
+        &mut events,
+        /*include_initialize*/ true,
+        /*include_resolved_config*/ true,
+        /*include_started*/ false,
+        /*include_token_usage*/ false,
+    )
+    .await;
+    assert!(events.is_empty());
+
+    reducer
+        .ingest(
+            AnalyticsFact::Custom(CustomAnalyticsFact::ResponsesApiCall(Box::new(
+                CodexResponsesApiCallFact {
+                    thread_id: "thread-2".to_string(),
+                    turn_id: "turn-2".to_string(),
+                    responses_id: Some("resp-1".to_string()),
+                    turn_responses_call_index: 2,
+                    status: CodexResponsesApiCallStatus::Completed,
+                    error: None,
+                    started_at: 100,
+                    completed_at: Some(101),
+                    duration_ms: Some(1200),
+                    input_item_count: 3,
+                    output_item_count: 4,
+                    input_tokens: Some(10),
+                    cached_input_tokens: Some(2),
+                    output_tokens: Some(6),
+                    reasoning_output_tokens: Some(1),
+                    total_tokens: Some(16),
+                    items: Vec::new(),
+                },
+            ))),
+            &mut events,
+        )
+        .await;
+
+    let payload = serde_json::to_value(&events).expect("serialize events");
+    assert_eq!(payload.as_array().expect("events array").len(), 1);
+    assert_eq!(payload[0]["event_type"], "codex_responses_api_call_event");
+    assert_eq!(payload[0]["event_params"]["thread_id"], "thread-2");
+    assert_eq!(payload[0]["event_params"]["turn_id"], "turn-2");
+    assert_eq!(payload[0]["event_params"]["responses_id"], "resp-1");
+    assert_eq!(payload[0]["event_params"]["turn_responses_call_index"], 2);
+    assert_eq!(payload[0]["event_params"]["model"], "gpt-5");
+    assert_eq!(payload[0]["event_params"]["model_provider"], "openai");
+    assert_eq!(payload[0]["event_params"]["status"], "completed");
+    assert_eq!(payload[0]["event_params"]["input_tokens"], 10);
+    assert_eq!(payload[0]["event_params"]["cached_input_tokens"], 2);
+    assert_eq!(payload[0]["event_params"]["output_tokens"], 6);
+    assert_eq!(payload[0]["event_params"]["reasoning_output_tokens"], 1);
+    assert_eq!(payload[0]["event_params"]["total_tokens"], 16);
+    assert_eq!(payload[0]["event_params"]["ephemeral"], false);
+    assert_eq!(payload[0]["event_params"]["thread_source"], "user");
+    assert_eq!(
+        payload[0]["event_params"]["app_server_client"]["product_client_id"],
+        "codex-tui"
+    );
 }
 
 #[test]
