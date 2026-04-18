@@ -107,7 +107,7 @@ impl Request {
                     self.headers
                         .insert(http::header::CONTENT_ENCODING, content_encoding);
 
-                    tracing::info!(
+                    tracing::debug!(
                         pre_compression_bytes,
                         post_compression_bytes,
                         compression_duration_ms = compression_duration.as_millis(),
