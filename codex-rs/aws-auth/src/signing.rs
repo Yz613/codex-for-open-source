@@ -7,7 +7,6 @@ use aws_sigv4::http_request::SignableRequest;
 use aws_sigv4::http_request::SigningSettings;
 use aws_sigv4::http_request::sign;
 use aws_sigv4::sign::v4;
-use http::HeaderMap;
 use http::Request;
 use http::Uri;
 
@@ -68,7 +67,8 @@ pub(crate) fn sign_request(
     })
 }
 
-pub(crate) fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
+#[cfg(test)]
+pub(crate) fn header_value(headers: &http::HeaderMap, name: &str) -> Option<String> {
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())

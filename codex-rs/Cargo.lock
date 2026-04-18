@@ -2838,11 +2838,14 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "codex-api",
+ "codex-aws-auth",
+ "codex-client",
  "codex-login",
  "codex-model-provider-info",
  "codex-protocol",
  "http 1.4.0",
  "pretty_assertions",
+ "tokio",
 ]
 
 [[package]]

@@ -90,6 +90,8 @@ pub struct ModelProviderInfo {
     pub experimental_bearer_token: Option<String>,
     /// Command-backed bearer-token configuration for this provider.
     pub auth: Option<ModelProviderAuthInfo>,
+    /// AWS SigV4 auth configuration for this provider.
+    pub aws: Option<ModelProviderAwsAuthInfo>,
     /// Which wire protocol this provider expects.
     #[serde(default)]
     pub wire_api: WireApi,
@@ -124,8 +126,57 @@ pub struct ModelProviderInfo {
     pub supports_websockets: bool,
 }
 
+/// AWS SigV4 auth configuration for a model provider.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ModelProviderAwsAuthInfo {
+    /// AWS profile name to use. When unset, the AWS SDK default chain decides.
+    pub profile: Option<String>,
+    /// AWS region to use. When unset, the AWS SDK default chain decides.
+    pub region: Option<String>,
+    /// AWS SigV4 service name. Defaults to `bedrock` when unset.
+    pub service: Option<String>,
+}
+
+impl ModelProviderAwsAuthInfo {
+    pub fn service_name(&self) -> &str {
+        self.service.as_deref().unwrap_or("bedrock")
+    }
+}
+
 impl ModelProviderInfo {
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if let Some(aws) = self.aws.as_ref() {
+            if aws
+                .service
+                .as_ref()
+                .is_some_and(|service| service.trim().is_empty())
+            {
+                return Err("provider aws.service must not be empty".to_string());
+            }
+
+            let mut conflicts = Vec::new();
+            if self.env_key.is_some() {
+                conflicts.push("env_key");
+            }
+            if self.experimental_bearer_token.is_some() {
+                conflicts.push("experimental_bearer_token");
+            }
+            if self.auth.is_some() {
+                conflicts.push("auth");
+            }
+            if self.requires_openai_auth {
+                conflicts.push("requires_openai_auth");
+            }
+
+            if !conflicts.is_empty() {
+                return Err(format!(
+                    "provider aws cannot be combined with {}",
+                    conflicts.join(", ")
+                ));
+            }
+        }
+
         let Some(auth) = self.auth.as_ref() else {
             return Ok(());
         };
@@ -269,6 +320,7 @@ impl ModelProviderInfo {
             env_key_instructions: None,
             experimental_bearer_token: None,
             auth: None,
+            aws: None,
             wire_api: WireApi::Responses,
             query_params: None,
             http_headers: Some(
@@ -370,6 +422,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        aws: None,
         wire_api,
         query_params: None,
         http_headers: None,

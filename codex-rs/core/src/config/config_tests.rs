@@ -366,6 +366,26 @@ command = "print-token"
 }
 
 #[test]
+fn rejects_provider_aws_with_env_key() {
+    let err = toml::from_str::<ConfigToml>(
+        r#"
+[model_providers.bedrock]
+name = "Amazon Bedrock"
+env_key = "AWS_BEARER_TOKEN_BEDROCK"
+
+[model_providers.bedrock.aws]
+region = "us-east-1"
+"#,
+    )
+    .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("model_providers.bedrock: provider aws cannot be combined with env_key")
+    );
+}
+
+#[test]
 fn config_toml_deserializes_model_availability_nux() {
     let toml = r#"
 [tui.model_availability_nux]
@@ -4749,6 +4769,7 @@ model_verbosity = "high"
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        aws: None,
         query_params: None,
         http_headers: None,
         env_http_headers: None,
