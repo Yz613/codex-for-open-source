@@ -392,6 +392,7 @@ struct ThreadListFilters {
     archived: bool,
     cwd: Option<Vec<PathBuf>>,
     search_term: Option<String>,
+    use_state_db_only: bool,
 }
 
 // Duration before a browser ChatGPT login attempt is abandoned.
@@ -3658,6 +3659,7 @@ impl CodexMessageProcessor {
             source_kinds,
             archived,
             cwd,
+            use_state_db_only,
             search_term,
         } = params;
         let cwd = match normalize_thread_list_cwd_filters(cwd) {
@@ -3689,6 +3691,7 @@ impl CodexMessageProcessor {
                     archived: archived.unwrap_or(false),
                     cwd,
                     search_term,
+                    use_state_db_only,
                 },
             )
             .await;
@@ -5162,6 +5165,7 @@ impl CodexMessageProcessor {
             archived,
             cwd,
             search_term,
+            use_state_db_only,
         } = filters;
         let mut cursor_obj = cursor;
         let mut last_cursor = cursor_obj.clone();
@@ -5201,6 +5205,7 @@ impl CodexMessageProcessor {
                     cwd_filters: cwd.clone(),
                     archived,
                     search_term: search_term.clone(),
+                    use_state_db_only,
                 })
                 .await
                 .map_err(thread_store_list_error)?;
