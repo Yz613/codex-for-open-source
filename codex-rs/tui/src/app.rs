@@ -6173,7 +6173,7 @@ Keymap template: https://github.com/openai/codex/blob/main/docs/default-keymap.t
                 self.chat_widget
                     .apply_keymap_update(keymap_config, &runtime_keymap);
                 self.chat_widget
-                    .refresh_keymap_action_menu(&context, &action, &runtime_keymap);
+                    .return_to_keymap_picker(&context, &action, &runtime_keymap);
                 self.chat_widget.add_info_message(message, /*hint*/ None);
             }
             Err(err) => {
@@ -6218,7 +6218,7 @@ Keymap template: https://github.com/openai/codex/blob/main/docs/default-keymap.t
                 self.chat_widget
                     .apply_keymap_update(keymap_config, &runtime_keymap);
                 self.chat_widget
-                    .refresh_keymap_action_menu(&context, &action, &runtime_keymap);
+                    .return_to_keymap_picker(&context, &action, &runtime_keymap);
                 self.chat_widget.add_info_message(
                     format!("Removed custom shortcut for `{context}.{action}`."),
                     /*hint*/ None,
