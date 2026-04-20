@@ -1,6 +1,8 @@
+use codex_api::AuthError;
 use codex_api::AuthProvider;
 use codex_aws_auth::AwsAuthConfig;
 use codex_aws_auth::AwsAuthContext;
+use codex_aws_auth::AwsAuthError;
 use codex_aws_auth::AwsRequestToSign;
 use codex_client::Request;
 use http::HeaderMap;
@@ -21,11 +23,19 @@ impl AwsSigV4AuthProvider {
         }
     }
 
-    async fn context(&self) -> Result<&AwsAuthContext, String> {
+    async fn context(&self) -> Result<&AwsAuthContext, AuthError> {
         self.context
             .get_or_try_init(|| AwsAuthContext::load(self.config.clone()))
             .await
-            .map_err(|err| err.to_string())
+            .map_err(aws_auth_error_to_auth_error)
+    }
+}
+
+fn aws_auth_error_to_auth_error(error: AwsAuthError) -> AuthError {
+    if error.is_retryable() {
+        AuthError::Transient(error.to_string())
+    } else {
+        AuthError::Build(error.to_string())
     }
 }
 
@@ -40,8 +50,8 @@ impl AuthProvider for AwsSigV4AuthProvider {
         false
     }
 
-    async fn apply_auth(&self, mut request: Request) -> Result<Request, String> {
-        let body = request.prepare_body_for_send()?;
+    async fn apply_auth(&self, mut request: Request) -> Result<Request, AuthError> {
+        let body = request.prepare_body_for_send().map_err(AuthError::Build)?;
         let context = self.context().await?;
         let signed = context
             .sign(AwsRequestToSign {
@@ -51,7 +61,7 @@ impl AuthProvider for AwsSigV4AuthProvider {
                 body,
             })
             .await
-            .map_err(|err| err.to_string())?;
+            .map_err(aws_auth_error_to_auth_error)?;
 
         request.url = signed.url;
         request.headers = signed.headers;

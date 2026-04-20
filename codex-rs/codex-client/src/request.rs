@@ -70,15 +70,16 @@ impl Request {
     /// Auth schemes such as AWS SigV4 need to sign the final body bytes, including
     /// compression and content headers. Calling this method is idempotent for
     /// already-finalized raw request bodies.
-    pub fn prepare_body_for_send(&mut self) -> Result<Vec<u8>, String> {
+    pub fn prepare_body_for_send(&mut self) -> Result<Bytes, String> {
         match self.body.take() {
             Some(RequestBody::Raw(raw_body)) => {
                 if self.compression != RequestCompression::None {
                     self.body = Some(RequestBody::Raw(raw_body));
                     return Err("request compression cannot be used with raw bodies".to_string());
                 }
-                self.body = Some(RequestBody::Raw(raw_body.clone()));
-                Ok(raw_body.to_vec())
+                let body = raw_body.clone();
+                self.body = Some(RequestBody::Raw(raw_body));
+                Ok(body)
             }
             Some(RequestBody::Json(body)) => {
                 let json = serde_json::to_vec(&body).map_err(|err| err.to_string())?;
@@ -127,12 +128,13 @@ impl Request {
                 }
 
                 self.compression = RequestCompression::None;
-                self.body = Some(RequestBody::Raw(Bytes::from(bytes.clone())));
+                let bytes = Bytes::from(bytes);
+                self.body = Some(RequestBody::Raw(bytes.clone()));
                 Ok(bytes)
             }
             None => {
                 self.compression = RequestCompression::None;
-                Ok(Vec::new())
+                Ok(Bytes::new())
             }
         }
     }
@@ -155,7 +157,7 @@ mod tests {
             .prepare_body_for_send()
             .expect("body should prepare");
 
-        assert_eq!(body, br#"{"model":"test-model"}"#);
+        assert_eq!(body, Bytes::from_static(br#"{"model":"test-model"}"#));
         assert_eq!(
             request
                 .headers
@@ -164,7 +166,7 @@ mod tests {
             Some("application/json")
         );
         assert_eq!(request.compression, RequestCompression::None);
-        assert_eq!(request.body, Some(RequestBody::Raw(body.into())));
+        assert_eq!(request.body, Some(RequestBody::Raw(body)));
     }
 
     #[test]

@@ -35,7 +35,7 @@ pub(crate) fn sign_request(
         request.method.as_str(),
         request.url.as_str(),
         signable_headers.into_iter(),
-        SignableBody::Bytes(&request.body),
+        SignableBody::Bytes(request.body.as_ref()),
     )
     .map_err(AwsAuthError::SigningRequest)?;
     let identity = credentials.clone().into();

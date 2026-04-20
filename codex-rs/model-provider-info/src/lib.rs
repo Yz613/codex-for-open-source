@@ -154,6 +154,12 @@ impl ModelProviderInfo {
             {
                 return Err("provider aws.service must not be empty".to_string());
             }
+            if self.supports_websockets {
+                // TODO(celia-oai): Support AWS SigV4 signing for WebSocket
+                // upgrade requests before allowing AWS-authenticated providers
+                // to enable Responses-over-WebSocket.
+                return Err("provider aws cannot be combined with supports_websockets".to_string());
+            }
 
             let mut conflicts = Vec::new();
             if self.env_key.is_some() {

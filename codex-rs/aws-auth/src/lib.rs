@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 use aws_credential_types::provider::ProvideCredentials;
 use aws_credential_types::provider::SharedCredentialsProvider;
+use bytes::Bytes;
 use http::HeaderMap;
 use http::Method;
 use thiserror::Error;
@@ -23,7 +24,7 @@ pub struct AwsRequestToSign {
     pub method: Method,
     pub url: String,
     pub headers: HeaderMap,
-    pub body: Vec<u8>,
+    pub body: Bytes,
 }
 
 /// Signed request parts returned to the caller.
@@ -113,12 +114,37 @@ impl AwsAuthContext {
     }
 }
 
+impl AwsAuthError {
+    /// Returns whether retrying the outbound request can reasonably recover from this auth error.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            AwsAuthError::Credentials(error) => matches!(
+                error,
+                aws_credential_types::provider::error::CredentialsError::CredentialsNotLoaded(_)
+                    | aws_credential_types::provider::error::CredentialsError::ProviderTimedOut(_)
+                    | aws_credential_types::provider::error::CredentialsError::ProviderError(_)
+                    | aws_credential_types::provider::error::CredentialsError::Unhandled(_)
+            ),
+            AwsAuthError::EmptyService
+            | AwsAuthError::MissingCredentialsProvider
+            | AwsAuthError::MissingRegion
+            | AwsAuthError::InvalidUri(_)
+            | AwsAuthError::BuildHttpRequest(_)
+            | AwsAuthError::InvalidHeaderValue(_)
+            | AwsAuthError::SigningRequest(_)
+            | AwsAuthError::SigningParams(_)
+            | AwsAuthError::SigningFailure(_) => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
     use std::time::UNIX_EPOCH;
 
     use aws_credential_types::Credentials;
+    use aws_credential_types::provider::error::CredentialsError;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -129,7 +155,7 @@ mod tests {
                 "AKIDEXAMPLE",
                 "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
                 session_token.map(str::to_string),
-                None,
+                /*expires_after*/ None,
                 "unit-test",
             )),
             region: "us-east-1".to_string(),
@@ -148,13 +174,13 @@ mod tests {
             method: Method::POST,
             url: "https://bedrock-runtime.us-east-1.amazonaws.com/v1/responses".to_string(),
             headers,
-            body: br#"{"model":"openai.gpt-oss-120b-1:0"}"#.to_vec(),
+            body: Bytes::from_static(br#"{"model":"openai.gpt-oss-120b-1:0"}"#),
         }
     }
 
     #[tokio::test]
     async fn sign_adds_sigv4_headers_and_preserves_existing_headers() {
-        let signed = test_context(None)
+        let signed = test_context(/*session_token*/ None)
             .sign_at(
                 test_request(),
                 UNIX_EPOCH + Duration::from_secs(1_700_000_000),
@@ -179,6 +205,27 @@ mod tests {
                 .is_some_and(|value| value.starts_with("AWS4-HMAC-SHA256 "))
         );
         assert!(signing::header_value(&signed.headers, "x-amz-date").is_some());
+    }
+
+    #[test]
+    fn credentials_provider_failures_are_retryable() {
+        assert!(
+            AwsAuthError::Credentials(CredentialsError::provider_error("temporarily unavailable"))
+                .is_retryable()
+        );
+        assert!(
+            AwsAuthError::Credentials(CredentialsError::provider_timed_out(Duration::from_secs(1)))
+                .is_retryable()
+        );
+    }
+
+    #[test]
+    fn deterministic_aws_auth_errors_are_not_retryable() {
+        assert!(!AwsAuthError::EmptyService.is_retryable());
+        assert!(
+            !AwsAuthError::Credentials(CredentialsError::invalid_configuration("bad profile"))
+                .is_retryable()
+        );
     }
 
     #[tokio::test]

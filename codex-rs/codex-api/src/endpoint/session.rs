@@ -105,7 +105,7 @@ impl<T: HttpTransport> EndpointSession<T> {
                 let auth = self.auth.clone();
                 let transport = &self.transport;
                 async move {
-                    let req = auth.apply_auth(req).await.map_err(TransportError::Build)?;
+                    let req = auth.apply_auth(req).await.map_err(TransportError::from)?;
                     transport.execute(req).await
                 }
             },
@@ -146,7 +146,7 @@ impl<T: HttpTransport> EndpointSession<T> {
                 let auth = self.auth.clone();
                 let transport = &self.transport;
                 async move {
-                    let req = auth.apply_auth(req).await.map_err(TransportError::Build)?;
+                    let req = auth.apply_auth(req).await.map_err(TransportError::from)?;
                     transport.stream(req).await
                 }
             },

@@ -1,7 +1,26 @@
 use async_trait::async_trait;
 use codex_client::Request;
+use codex_client::TransportError;
 use http::HeaderMap;
 use std::sync::Arc;
+
+/// Error returned while applying authentication to an outbound request.
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("request auth build error: {0}")]
+    Build(String),
+    #[error("transient auth error: {0}")]
+    Transient(String),
+}
+
+impl From<AuthError> for TransportError {
+    fn from(error: AuthError) -> Self {
+        match error {
+            AuthError::Build(message) => TransportError::Build(message),
+            AuthError::Transient(message) => TransportError::Network(message),
+        }
+    }
+}
 
 /// Applies authentication to API requests.
 ///
@@ -25,7 +44,7 @@ pub trait AuthProvider: Send + Sync {
     /// Header-only auth providers can rely on the default implementation.
     /// Request-signing providers can override this to inspect the final URL,
     /// headers, and body bytes before the transport sends the request.
-    async fn apply_auth(&self, mut request: Request) -> Result<Request, String> {
+    async fn apply_auth(&self, mut request: Request) -> Result<Request, AuthError> {
         self.add_auth_headers(&mut request.headers);
         Ok(request)
     }

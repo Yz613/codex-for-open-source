@@ -219,7 +219,6 @@ async-trait = "0.1.89"
 aws-config = "1"
 aws-credential-types = "1"
 aws-sigv4 = "1"
-aws-smithy-runtime-api = "1"
 aws-types = "1"
 axum = { version = "0.8", default-features = false }
 base64 = "0.22.1"

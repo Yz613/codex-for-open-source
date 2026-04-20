@@ -250,12 +250,32 @@ fn test_validate_provider_aws_rejects_conflicting_auth() {
             service: None,
         }),
         env_key: Some("AWS_BEARER_TOKEN_BEDROCK".to_string()),
+        supports_websockets: false,
         ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
     };
 
     assert_eq!(
         provider.validate(),
         Err("provider aws cannot be combined with env_key, requires_openai_auth".to_string())
+    );
+}
+
+#[test]
+fn test_validate_provider_aws_rejects_websockets() {
+    let provider = ModelProviderInfo {
+        aws: Some(ModelProviderAwsAuthInfo {
+            profile: None,
+            region: None,
+            service: None,
+        }),
+        requires_openai_auth: false,
+        supports_websockets: true,
+        ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
+    };
+
+    assert_eq!(
+        provider.validate(),
+        Err("provider aws cannot be combined with supports_websockets".to_string())
     );
 }
 
