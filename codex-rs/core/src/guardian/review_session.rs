@@ -786,23 +786,6 @@ async fn run_review_on_session(
     let prompt_mode_tag = prompt_items.stats.prompt_mode.as_tag();
     let transcript_cursor = prompt_items.transcript_cursor;
     let items = prompt_items.items;
-    let sync_hosts_started_at = Instant::now();
-    params
-        .parent_session
-        .services
-        .network_approval
-        .sync_session_approved_hosts_to(&review_session.codex.session.services.network_approval)
-        .await;
-    record_guardian_phase_duration_metric(
-        &params.parent_turn.session_telemetry,
-        action_kind,
-        params.request_source,
-        session_mode.as_tag(),
-        "sync_approved_hosts",
-        prompt_mode_tag,
-        "completed",
-        sync_hosts_started_at.elapsed(),
-    );
     let submit_started_at = Instant::now();
     let submit_span = tracing::info_span!(
         "guardian_review_submit",
@@ -816,6 +799,26 @@ async fn run_review_on_session(
         params.external_cancel.as_ref(),
         Box::pin(
             async {
+                let sync_hosts_started_at = Instant::now();
+                params
+                    .parent_session
+                    .services
+                    .network_approval
+                    .sync_session_approved_hosts_to(
+                        &review_session.codex.session.services.network_approval,
+                    )
+                    .await;
+                record_guardian_phase_duration_metric(
+                    &params.parent_turn.session_telemetry,
+                    action_kind,
+                    params.request_source,
+                    session_mode.as_tag(),
+                    "sync_approved_hosts",
+                    prompt_mode_tag,
+                    "completed",
+                    sync_hosts_started_at.elapsed(),
+                );
+
                 let review_trace = guardian_review_submit_trace(&params.parent_turn);
                 review_session
                     .codex
