@@ -1,8 +1,7 @@
 use clap::Parser;
-use clap::ValueHint;
 use codex_utils_cli::ApprovalModeCliArg;
 use codex_utils_cli::CliConfigOverrides;
-use std::path::PathBuf;
+use codex_utils_cli::SharedCliOptions;
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -10,10 +9,6 @@ pub struct Cli {
     /// Optional user prompt to start the session.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
-
-    /// Optional image(s) to attach to the initial prompt.
-    #[arg(long = "image", short = 'i', value_name = "FILE", value_delimiter = ',', num_args = 1..)]
-    pub images: Vec<PathBuf>,
 
     // Internal controls set by the top-level `codex resume` subcommand.
     // These are not exposed as user flags on the base `codex` command.
@@ -53,59 +48,16 @@ pub struct Cli {
     #[clap(skip)]
     pub fork_show_all: bool,
 
-    /// Model the agent should use.
-    #[arg(long, short = 'm')]
-    pub model: Option<String>,
-
-    /// Convenience flag to select the local open source model provider. Equivalent to -c
-    /// model_provider=oss; verifies a local LM Studio or Ollama server is running.
-    #[arg(long = "oss", default_value_t = false)]
-    pub oss: bool,
-
-    /// Specify which local provider to use (lmstudio or ollama).
-    /// If not specified with --oss, will use config default or show selection.
-    #[arg(long = "local-provider")]
-    pub oss_provider: Option<String>,
-
-    /// Configuration profile from config.toml to specify default options.
-    #[arg(long = "profile", short = 'p')]
-    pub config_profile: Option<String>,
-
-    /// Select the sandbox policy to use when executing model-generated shell
-    /// commands.
-    #[arg(long = "sandbox", short = 's')]
-    pub sandbox_mode: Option<codex_utils_cli::SandboxModeCliArg>,
+    #[clap(flatten)]
+    pub shared: SharedCliOptions,
 
     /// Configure when the model requires human approval before executing a command.
     #[arg(long = "ask-for-approval", short = 'a')]
     pub approval_policy: Option<ApprovalModeCliArg>,
 
-    /// Convenience alias for low-friction sandboxed automatic execution (-a on-request, --sandbox workspace-write).
-    #[arg(long = "full-auto", default_value_t = false)]
-    pub full_auto: bool,
-
-    /// Skip all confirmation prompts and execute commands without sandboxing.
-    /// EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed.
-    #[arg(
-        long = "dangerously-bypass-approvals-and-sandbox",
-        alias = "yolo",
-        default_value_t = false,
-        conflicts_with_all = ["approval_policy", "full_auto"]
-    )]
-    pub dangerously_bypass_approvals_and_sandbox: bool,
-
-    /// Tell the agent to use the specified directory as its working root.
-    /// In remote mode, the path is forwarded to the server and resolved there.
-    #[clap(long = "cd", short = 'C', value_name = "DIR")]
-    pub cwd: Option<PathBuf>,
-
     /// Enable live web search. When enabled, the native Responses `web_search` tool is available to the model (no per‑call approval).
     #[arg(long = "search", default_value_t = false)]
     pub web_search: bool,
-
-    /// Additional directories that should be writable alongside the primary workspace.
-    #[arg(long = "add-dir", value_name = "DIR", value_hint = ValueHint::DirPath)]
-    pub add_dir: Vec<PathBuf>,
 
     /// Disable alternate screen mode
     ///
@@ -117,4 +69,18 @@ pub struct Cli {
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
+}
+
+impl std::ops::Deref for Cli {
+    type Target = SharedCliOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.shared
+    }
+}
+
+impl std::ops::DerefMut for Cli {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.shared
+    }
 }
