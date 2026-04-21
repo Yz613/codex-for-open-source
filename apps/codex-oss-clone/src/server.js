@@ -1082,6 +1082,27 @@ function shouldRetryWithoutResume(error) {
   return /session|thread|resume|not found|unknown/.test(message);
 }
 
+function isCodexBinaryMissingError(error) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const errorMessage = String(error.message || "");
+  const errorCode = String(error.code || "");
+  return /spawn\s+.+\s+enoent/i.test(errorMessage) || errorCode.toUpperCase() === "ENOENT";
+}
+
+function shouldUseCodexRuntime(providerKey) {
+  if (VIBECODE_ENGINE !== "codex") {
+    return false;
+  }
+
+  if (providerKey === "localcli") {
+    return false;
+  }
+
+  return true;
+}
+
 async function runCodexTurn({
   clientThreadId,
   providerKey,
@@ -1792,7 +1813,7 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "model and messages are required" });
   }
 
-  if (VIBECODE_ENGINE === "codex") {
+  if (shouldUseCodexRuntime(providerKey)) {
     try {
       const prompt = buildCodexPrompt({
         messages,
@@ -1822,8 +1843,14 @@ app.post("/api/chat", async (req, res) => {
         parseErrorCount: result.parseErrorCount
       });
     } catch (error) {
-      const status = typeof error?.status === "number" ? error.status : 500;
-      return res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+      if (isCodexBinaryMissingError(error)) {
+        console.warn(
+          `[codex-oss-clone] codex binary not found (${CODEX_BIN}); falling back to provider runtime for /api/chat`
+        );
+      } else {
+        const status = typeof error?.status === "number" ? error.status : 500;
+        return res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+      }
     }
   }
 
@@ -1891,7 +1918,7 @@ app.post("/api/agent", async (req, res) => {
     return res.status(400).json({ error: "model and messages are required" });
   }
 
-  if (VIBECODE_ENGINE === "codex") {
+  if (shouldUseCodexRuntime(providerKey)) {
     try {
       const prompt = buildCodexPrompt({
         messages,
@@ -1921,8 +1948,14 @@ app.post("/api/agent", async (req, res) => {
         parseErrorCount: result.parseErrorCount
       });
     } catch (error) {
-      const status = typeof error?.status === "number" ? error.status : 500;
-      return res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+      if (isCodexBinaryMissingError(error)) {
+        console.warn(
+          `[codex-oss-clone] codex binary not found (${CODEX_BIN}); falling back to provider runtime for /api/agent`
+        );
+      } else {
+        const status = typeof error?.status === "number" ? error.status : 500;
+        return res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+      }
     }
   }
 
