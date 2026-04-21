@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex OSS Clone</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="left-rail">
+        <div class="rail-window">
+          <div class="window-dots" aria-hidden="true">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <div class="window-actions">
+            <button class="ghost-icon" type="button" aria-label="Toggle panel">▢</button>
+            <button class="ghost-icon" type="button" aria-label="Back">←</button>
+            <button class="ghost-icon" type="button" aria-label="Forward">→</button>
+          </div>
+        </div>
+
+        <button id="newChatButton" class="rail-link active" type="button">
+          <span class="rail-icon">✎</span>
+          <span>New thread</span>
+        </button>
+        <button class="rail-link" type="button">
+          <span class="rail-icon">◷</span>
+          <span>Automations</span>
+        </button>
+        <button class="rail-link" type="button">
+          <span class="rail-icon">◫</span>
+          <span>Skills</span>
+        </button>
+
+        <input id="searchInput" class="visually-hidden" type="text" placeholder="Search" />
+
+        <div class="threads-head">
+          <div class="threads-title">Threads</div>
+          <div class="threads-actions">
+            <button id="openProjectFolderButton" class="ghost-icon" type="button" aria-label="Open folder">↪</button>
+            <button id="openLocalFileButton" class="ghost-icon" type="button" aria-label="Open file">≡</button>
+            <input id="localFilePicker" type="file" class="visually-hidden" />
+          </div>
+        </div>
+
+        <div id="projectsAccordion" class="projects-accordion"></div>
+
+        <button id="toggleSettingsButton" class="settings-link" type="button">
+          <span class="rail-icon">⚙</span>
+          <span>Settings</span>
+        </button>
+      </aside>
+
+      <main class="main-pane">
+        <header class="main-topbar">
+          <div class="thread-title" id="threadTitle">New thread</div>
+          <div class="top-controls">
+            <div id="githubState" class="top-chip hidden">GitHub: checking...</div>
+            <div id="statusPill" class="top-chip">Ready</div>
+            <button id="pushGithubButton" class="commit-button" type="button">Commit ▾</button>
+            <div id="diffBadge" class="top-chip">+0 -0</div>
+            <button class="ghost-icon" type="button" aria-label="Open summary">◻</button>
+            <button class="ghost-icon" type="button" aria-label="Open docs">⊞</button>
+            <button class="ghost-icon" type="button" aria-label="Copy link">⎘</button>
+          </div>
+          <div id="repoLabel" class="visually-hidden">codex-for-open-source</div>
+        </header>
+
+        <section id="messages" class="messages"></section>
+
+        <footer class="composer-area">
+          <div class="starter-cards">
+            <button class="starter-card" type="button">Build a classic Snake game in this repo.</button>
+            <button class="starter-card" type="button">Create a one-page summary for this app.</button>
+            <button class="starter-card" type="button">Create a plan to migrate this project.</button>
+          </div>
+
+          <div class="composer-box">
+            <textarea id="promptInput" rows="3" placeholder="Ask Codex anything, @ to add files, / for commands, $ for skills"></textarea>
+            <div class="composer-toolbar">
+              <div class="toolbar-left">
+                <button class="ghost-icon" type="button" aria-label="Add">＋</button>
+                <select id="modelSelect" class="inline-select"></select>
+                <select id="thinkingSelect" class="inline-select compact">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                </select>
+                <label class="agent-toggle" for="agentModeToggle">
+                  <input id="agentModeToggle" type="checkbox" checked />
+                  <span>Agent</span>
+                </label>
+                <span id="activeModelLabel" class="active-model">No model selected</span>
+              </div>
+              <div class="toolbar-right">
+                <button class="ghost-icon" type="button" aria-label="Voice">◉</button>
+                <button id="sendButton" class="send-button" type="button">↑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-row">
+            <span>Local</span>
+            <span>Default permissions</span>
+            <span>main</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <div id="settingsBackdrop" class="settings-backdrop" aria-hidden="true"></div>
+    <section id="settingsPanel" class="settings-panel" role="dialog" aria-modal="true" aria-hidden="true">
+      <header class="settings-header">
+        <h2>Settings</h2>
+        <button id="closeSettingsButton" class="ghost-icon" type="button" aria-label="Close settings">✕</button>
+      </header>
+      <div class="settings-panel-body">
+        <div class="settings-grid">
+          <label class="field-label" for="workspacePathInput">Workspace path</label>
+          <input id="workspacePathInput" type="text" placeholder="/absolute/path/to/project" />
+          <div class="settings-buttons">
+            <button id="chooseWorkspaceFolderButton" class="mini-button" type="button">Choose folder</button>
+            <button id="openWorkspaceButton" class="mini-button" type="button">Open workspace</button>
+            <button id="refreshFilesButton" class="mini-button" type="button">Refresh files</button>
+          </div>
+          <div id="workspaceMeta" class="provider-notes"></div>
+
+          <label class="field-label" for="filePathInput">File path (relative)</label>
+          <input id="filePathInput" type="text" placeholder="src/app.js" />
+          <div class="settings-buttons">
+            <button id="loadFileButton" class="mini-button" type="button">Load file</button>
+            <button id="saveFileButton" class="mini-button" type="button">Save file</button>
+          </div>
+          <select id="fileSelect" class="file-select" size="8"></select>
+          <textarea id="fileEditorInput" rows="10" placeholder="File contents will appear here"></textarea>
+
+          <label class="field-label" for="providerSelect">Provider</label>
+          <select id="providerSelect"></select>
+
+          <div class="field-label">Local backends</div>
+          <div class="settings-buttons backend-controls">
+            <input id="localBackendNameInput" type="text" placeholder="Display name (for example, LM Studio)" />
+            <input id="localBackendUrlInput" type="text" placeholder="http://127.0.0.1:1234/v1" />
+            <input id="localBackendApiKeyInput" type="password" placeholder="Optional API key" />
+            <button id="addLocalBackendButton" class="mini-button" type="button">Add backend</button>
+          </div>
+          <div id="localBackendsList" class="local-backends-list"></div>
+
+          <label class="field-label" for="baseUrlInput">Base URL</label>
+          <input id="baseUrlInput" type="text" placeholder="https://.../v1" />
+
+          <label class="field-label" for="apiKeyInput">API Key</label>
+          <input id="apiKeyInput" type="password" placeholder="Provider key" />
+
+          <div class="settings-buttons">
+            <button id="loadModelsButton" class="mini-button" type="button">Load models for provider</button>
+            <button id="saveSettingsButton" class="mini-button" type="button">Save settings</button>
+          </div>
+
+          <label class="field-label" for="systemPromptInput">System prompt</label>
+          <textarea id="systemPromptInput" rows="4">You are a helpful coding assistant. Be concise, clear, and practical.</textarea>
+
+          <div id="providerNotes" class="provider-notes"></div>
+
+          <div class="field-label">Routing rules</div>
+          <div id="routingRules" class="routing-rules"></div>
+        </div>
+      </div>
+    </section>
+
+    <template id="messageTemplate">
+      <article class="message">
+        <div class="message-role"></div>
+        <div class="message-meta"></div>
+        <div class="message-content"></div>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

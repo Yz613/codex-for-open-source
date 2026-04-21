@@ -1,0 +1,16 @@
+{
+  "name": "codex-oss-clone",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:cli-backend": "cd backend && ./.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --reload",
+    "start:cli-backend:managed": "bash ./scripts/start-cli-backend.sh",
+    "stop:cli-backend": "bash ./scripts/stop-cli-backend.sh",
+    "install:mac-app": "bash ./scripts/install-macos-app.sh",
+    "stop": "bash ./scripts/stop-server.sh"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
